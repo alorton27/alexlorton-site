@@ -24,3 +24,12 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+::selection { background: rgba(180, 220, 255, 0.6); }
+a { text-underline-offset: 3px; }
+
+/* Smooth text rendering */
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+/* Dark mode card contrast */
+.dark .card { background: rgba(10,10,10,.6); }
