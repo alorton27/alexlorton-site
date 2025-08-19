@@ -11,7 +11,7 @@ const COLORS = [
   "#FFD60A", // yellow
   "#8E24AA", // purple
   "#FF7F50", // coral
-  "#FFFFFF", // white (acts like an eraser if you drew in color)
+  "#FFFFFF", // white (acts like eraser on colored strokes)
 ];
 
 export default function WhiteboardPage() {
@@ -23,19 +23,23 @@ export default function WhiteboardPage() {
   const [color, setColor] = useState<string>("#111827");
   const [lineWidth, setLineWidth] = useState<number>(4);
 
-  // Setup / resize canvas (keeps nav at top by sizing to viewport)
+  // Keep track of the CSS size we render at (not device pixels)
+  const cssSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  // Set up / resize canvas to fill the viewport minus the site nav + bottom controls
   useEffect(() => {
     function setup() {
       const c = canvasRef.current;
       if (!c) return;
 
-      // Reserve some space for the page chrome (header above, controls below)
-      const headerReserve = 64;   // approx height for site nav
-      const footerReserve = 120;  // our own controls area
+      const headerReserve = 64;  // approx height for your site nav
+      const controlsReserve = 116; // fixed controls height below
       const cssWidth = window.innerWidth;
-      const cssHeight = Math.max(200, window.innerHeight - headerReserve - footerReserve);
+      const cssHeight = Math.max(240, window.innerHeight - headerReserve - controlsReserve);
 
-      // Handle HiDPI crispness
+      cssSizeRef.current = { width: cssWidth, height: cssHeight };
+
+      // HiDPI crispness
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       c.width = Math.floor(cssWidth * dpr);
       c.height = Math.floor(cssHeight * dpr);
@@ -44,6 +48,8 @@ export default function WhiteboardPage() {
 
       const ctx = c.getContext("2d");
       if (!ctx) return;
+
+      // Reset transform, then scale to DPR
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
 
@@ -60,17 +66,15 @@ export default function WhiteboardPage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once; we set style changes below via effects
+  }, []);
 
-  // Update style when color/size changes
+  // Update style when color or width changes
   useEffect(() => {
-    if (ctxRef.current) {
-      ctxRef.current.strokeStyle = color;
-      ctxRef.current.lineWidth = lineWidth;
-    }
+    if (!ctxRef.current) return;
+    ctxRef.current.strokeStyle = color;
+    ctxRef.current.lineWidth = lineWidth;
   }, [color, lineWidth]);
 
-  // Helpers
   function getPos(e: React.PointerEvent<HTMLCanvasElement>) {
     const c = canvasRef.current!;
     const rect = c.getBoundingClientRect();
@@ -116,21 +120,35 @@ export default function WhiteboardPage() {
   function downloadPNG() {
     const c = canvasRef.current;
     if (!c) return;
+
+    // Create an export canvas that matches the *CSS* size (what users see)
+    const { width: cssW, height: cssH } = cssSizeRef.current;
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = cssW;
+    exportCanvas.height = cssH;
+
+    const exportCtx = exportCanvas.getContext("2d");
+    if (!exportCtx) return;
+
+    // Draw the on-screen canvas onto the export canvas scaled to CSS size
+    // Current canvas is DPR-scaled; drawImage handles the downscale
+    exportCtx.drawImage(c, 0, 0, cssW, cssH);
+
     const link = document.createElement("a");
     link.download = "whiteboard.png";
-    link.href = c.toDataURL("image/png");
+    link.href = exportCanvas.toDataURL("image/png");
     link.click();
   }
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] flex flex-col bg-white dark:bg-neutral-950">
-      {/* Keep your global site nav visible above this page content */}
+      {/* Keep global site nav above this page content */}
       <header className="p-4 text-center text-xl font-semibold border-b bg-white/80 dark:bg-neutral-900/70 sticky top-0 z-10">
         All ideas welcome
       </header>
 
-      {/* Canvas fills remaining vertical space above the controls */}
-      <div className="relative flex-1">
+      {/* Drawing surface with bright yellow border */}
+      <div className="relative flex-1 border-4 border-[#FFD60A]">
         <canvas
           ref={canvasRef}
           className="absolute inset-0 touch-none cursor-crosshair bg-white dark:bg-neutral-950"
@@ -142,16 +160,20 @@ export default function WhiteboardPage() {
         />
       </div>
 
-      {/* Bottom controls */}
-      <div className="p-4 flex flex-col items-center gap-3 border-t bg-gray-50 dark:bg-neutral-900">
+      {/* Bottom controls (fixed so they always show) */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 flex flex-col items-center gap-3 pb-4">
         {/* Palette + size */}
-        <div className="flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/90 dark:bg-neutral-800/90 px-3 py-2 shadow">
+        <div className="flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/95 dark:bg-neutral-800/95 px-3 py-2 shadow border">
           {COLORS.map((c) => (
             <button
               key={c}
               title={c}
               onClick={() => setColor(c)}
-              className={`h-7 w-7 rounded-full border ${c.toLowerCase() === color.toLowerCase() ? "ring-2 ring-offset-2 ring-black/60 dark:ring-white/80" : ""}`}
+              className={`h-7 w-7 rounded-full border ${
+                c.toLowerCase() === color.toLowerCase()
+                  ? "ring-2 ring-offset-2 ring-black/60 dark:ring-white/80"
+                  : ""
+              }`}
               style={{ backgroundColor: c }}
             />
           ))}
@@ -170,7 +192,7 @@ export default function WhiteboardPage() {
         </div>
 
         {/* Clear / Download */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 rounded-full bg-white/95 dark:bg-neutral-800/95 px-3 py-2 shadow border">
           <button
             onClick={clearCanvas}
             className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-100 dark:bg-neutral-800 dark:hover:bg-neutral-700"
