@@ -4,14 +4,9 @@
 import NextImage from "next/image";
 import { useEffect, useState } from "react";
 
-type Topping = {
-  key: string;
-  label: string;
-  src: string;
-  alt: string;
-};
+type Topping = { key: string; label: string; src: string; alt: string };
 
-// Map each topping to an image path in /public/pizza/
+// Map each topping to an image path in /public/pizza/ (PNG versions)
 const TOPPINGS: Topping[] = [
   { key: "pepperoni", label: "Pepperoni", src: "/pizza/pepperoni.png", alt: "Pepperoni pizza" },
   { key: "sausage", label: "Sausage", src: "/pizza/sausage.png", alt: "Sausage pizza" },
@@ -57,9 +52,9 @@ export default function PizzaPartyPage() {
     setMobileOpen(false);
   }
 
-  const sidebar = (
+  const Sidebar = (
     <nav className="h-full w-64 shrink-0 border-r bg-white/95 dark:bg-neutral-900/95 p-4 overflow-y-auto">
-      <h2 className="text-lg font-semibold mb-3">Toppings</h2>
+      <h2 className="text-2xl font-bold mb-3">Toppings</h2>
       <button
         onClick={() => setCurrent(BASE_PIZZA)}
         className={`w-full text-left px-3 py-2 rounded-lg mb-2 border ${
@@ -94,6 +89,7 @@ export default function PizzaPartyPage() {
       {/* Header */}
       <header className="border-b bg-white/80 dark:bg-neutral-900/70">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex items-center gap-3">
+          {/* Mobile drawer toggle */}
           <button
             className="md:hidden rounded-lg border px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
             onClick={() => setMobileOpen((v) => !v)}
@@ -110,28 +106,32 @@ export default function PizzaPartyPage() {
 
       {/* Layout */}
       <div className="mx-auto max-w-6xl flex">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar (sticky) */}
         <aside id="pizza-sidebar" className="hidden md:block sticky top-[64px] h-[calc(100vh-64px)]">
-          {sidebar}
+          {Sidebar}
         </aside>
 
         {/* Mobile drawer */}
+        <div
+          className={`md:hidden fixed top-[64px] bottom-0 left-0 z-40 transform transition-transform duration-300 ${
+            mobileOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+          aria-hidden={!mobileOpen}
+        >
+          <div className="h-full w-72 shadow-xl">{Sidebar}</div>
+        </div>
+        {/* Backdrop */}
         {mobileOpen && (
-          <div className="md:hidden fixed inset-0 z-30">
-            <button
-              className="absolute inset-0 bg-black/30"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close toppings"
-            />
-            <div className="absolute left-0 top-[64px] bottom-0 z-40">
-              <div className="h-full">{sidebar}</div>
-            </div>
-          </div>
+          <button
+            className="md:hidden fixed inset-0 top-[64px] bg-black/30 z-30"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close toppings"
+          />
         )}
 
         {/* Image stage */}
         <section className="flex-1 p-4 sm:p-6">
-          <div className="relative w-full aspect-square sm:aspect-[4/3] rounded-2xl border bg-white dark:bg-neutral-950 overflow-hidden">
+          <div className="relative w-full aspect-square sm:aspect-[4/3] rounded-2xl bg-white dark:bg-neutral-950 overflow-hidden">
             <NextImage
               key={current.src}
               src={current.src}
@@ -140,10 +140,6 @@ export default function PizzaPartyPage() {
               className="object-contain"
               priority
             />
-          </div>
-
-          <div className="mt-4 text-sm text-neutral-600 dark:text-neutral-400">
-            Showing: <span className="font-medium">{current.label}</span>
           </div>
         </section>
       </div>
