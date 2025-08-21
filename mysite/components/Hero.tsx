@@ -6,9 +6,9 @@ import { useEffect, useState } from "react";
 
 // If you already have your images array, keep it; this is a minimal stub:
 const HERO_IMAGES = [
-  "/hero/nyc.jpg",
+  "/hero/nyc-skyline.jpg",
   "/hero/ohio-stadium.jpg",
-  "/hero/marathon.jpg",
+  "/hero/marathon-start.jpg",
   "/hero/entrepreneurship.jpg",
   "/hero/fatherhood.jpg",
 ];

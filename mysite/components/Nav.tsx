@@ -5,21 +5,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 
-const links = [
-  { href: "/", label: "Home" },
-  { href: "/about", label: "About" },
-  { href: "/contact", label: "Contact" },
-  {
-    href: "/fun",
-    label: "Fun",
-    // You may already have a dropdown for Relax / White Board / Game / Pizza Party
-  },
-  { href: "/login", label: "Sign In" },
-];
-
 export default function Nav() {
   const pathname = usePathname();
   const { data: session } = useSession();
+
+  const links = [
+    { href: "/", label: "Home" },
+    { href: "/about", label: "About" },
+    { href: "/contact", label: "Contact" },
+    { href: "/fun", label: "Fun" },
+    { href: "/login", label: "Sign In" },
+  ];
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b bg-white/80 backdrop-blur dark:bg-neutral-900/70">
@@ -37,7 +33,7 @@ export default function Nav() {
             </Link>
           ))}
 
-          {/* Optional: show Projects only when signed in */}
+          {/* Projects only when signed in */}
           {session?.user && (
             <Link
               href="/projects"
