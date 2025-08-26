@@ -17,7 +17,7 @@ return (
 <html lang="en">
 <body className="bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
 <Header />
-<div className="min-h-[calc(100vh-56px)]">{children}</div>
+<div className="min-h-screen">{children}</div>
 <footer className="border-t mt-16">
 <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6 text-sm text-neutral-600 dark:text-neutral-400 flex items-center justify-between">
 <p>© {new Date().getFullYear()} Alex Lorton</p>

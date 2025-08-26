@@ -5,7 +5,7 @@ return (
 <section className="space-y-3">
 <h1 className="text-3xl font-semibold">Me</h1>
 <p className="text-neutral-700 dark:text-neutral-300">
-Hi, I’m Alex. I’m an entrepreneur, runner, dad, New Yorker, Ohioan and more. This is my place to build personal tools and experiments. Drop me a line to connect.
+Here's a little about me. After 15 years of building, running, and selling Cater2.me, I'm taking a break to reflect and recharge. I'm thinking about what my next project will be. If you have any interesting projects or ideas, please reach out.
 </p>
 </section>
 
@@ -16,7 +16,7 @@ Hi, I’m Alex. I’m an entrepreneur, runner, dad, New Yorker, Ohioan and more.
 <div>
 <div className="font-medium">Cofounder & Co-CEO</div>
 <div>Cater2.me</div>
-<div className="text-sm text-neutral-500">Sep 2010 – Present</div>
+<div className="text-sm text-neutral-500">Sep 2010 – Sep 2025</div>
 </div>
 <div>
 <div className="font-medium">Engagement Manager</div>
@@ -64,10 +64,11 @@ B.S. in Economics (concentration in Accounting, Legal Studies, and Entrepreneurs
 <section className="space-y-3">
 <h2 className="text-xl font-medium">Skills & Hobbies</h2>
 <ul className="list-disc pl-6 text-neutral-700 dark:text-neutral-300 space-y-1">
-<li>Marathon runner — 2:39 PR; 35+ marathons & ultras</li>
+<li>Father to two great kids, husband to an amazing wife</li>
+  <li>Marathon runner — 2:39 PR; 35+ marathons & ultras</li>
 <li>Daily NYT crossword solver</li>
-<li>Ohio State Buckeye football enthusiast</li>
-<li>Peacemaker, negotiator, collaborator</li>
+<li>Ohio State Buckeye football fanatic</li>
+<li>Collaborator, negotiator, peacemaker</li>
 </ul>
 </section>
 </main>
