@@ -10,6 +10,7 @@ const BG_LIGHT = "#ffffff";
 const BG_DARK = "#0a0a0a";
 
 export default function PongPage() {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -21,8 +22,8 @@ export default function PongPage() {
 
   // Game state (mutable)
   const stateRef = useRef({
-    width: 0,
-    height: 0,           // logical (CSS) canvas size
+    width: 0,                 // logical (CSS) canvas size
+    height: 0,
     dpr: 1,
 
     paddleH: 90,
@@ -32,30 +33,28 @@ export default function PongPage() {
     padSpeed: 8,
 
     ball: { pos: { x: 0, y: 0 }, vel: { x: 6, y: 4 }, r: 7 },
-    maxBallSpeed: 20,     // cap the speed
-    speedBoost: 1.05,     // multiplier per paddle hit
+    maxBallSpeed: 20,
+    speedBoost: 1.05,
 
     keys: { up: false, down: false, w: false, s: false },
-
     dark: false,
+    inited: false,
   });
 
-  /** Setup + resize (preserve state by scaling positions instead of resetting) */
+  /** Size canvas to the wrapper (between page header and help bar). */
   useEffect(() => {
-    function setupCanvas() {
+    function measureAndSetup() {
+      const wrap = wrapRef.current;
       const c = canvasRef.current;
-      if (!c) return;
+      if (!wrap || !c) return;
 
-      // Reserve space for page header (this page) + footer help text
-      const pageHeaderReserve = 56; // ~ h-14
-      const footerReserve = 56;
-
-      const cssWidth = window.innerWidth;
-      const cssHeight = Math.max(300, window.innerHeight - pageHeaderReserve - footerReserve);
+      // Measure available size from wrapper
+      const rect = wrap.getBoundingClientRect();
+      const cssWidth = Math.max(320, Math.floor(rect.width));
+      const cssHeight = Math.max(240, Math.floor(rect.height));
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-      // scale factor vs previous logical size
       const prevW = stateRef.current.width || cssWidth;
       const prevH = stateRef.current.height || cssHeight;
       const scaleX = cssWidth / prevW;
@@ -72,7 +71,6 @@ export default function PongPage() {
       ctx.scale(dpr, dpr);
       ctxRef.current = ctx;
 
-      // Update logical size + dpr
       const s = stateRef.current;
       s.width = cssWidth;
       s.height = cssHeight;
@@ -82,25 +80,32 @@ export default function PongPage() {
       s.paddleH = Math.max(70, Math.floor(cssHeight * 0.18));
       s.paddleW = 10;
 
-      s.padL.x = 24; // keep a fixed inset
+      s.padL.x = 24;
       s.padL.y = clamp(s.padL.y * scaleY, 0, cssHeight - s.paddleH);
 
       s.padR.x = cssWidth - s.paddleW - 24;
       s.padR.y = clamp(s.padR.y * scaleY, 0, cssHeight - s.paddleH);
 
-      // Ball position/size scales with canvas
-      s.ball.pos.x = clamp(s.ball.pos.x * scaleX, s.ball.r, cssWidth - s.ball.r);
-      s.ball.pos.y = clamp(s.ball.pos.y * scaleY, s.ball.r, cssHeight - s.ball.r);
       s.ball.r = Math.max(6, Math.floor(Math.min(cssWidth, cssHeight) * 0.012));
+
+      // On FIRST init, center the ball
+      if (!s.inited || (s.ball.pos.x === 0 && s.ball.pos.y === 0)) {
+        s.ball.pos = { x: cssWidth / 2, y: cssHeight / 2 };
+        s.inited = true;
+      } else {
+        // Otherwise scale current ball position into new size
+        s.ball.pos.x = clamp(s.ball.pos.x * scaleX, s.ball.r, cssWidth - s.ball.r);
+        s.ball.pos.y = clamp(s.ball.pos.y * scaleY, s.ball.r, cssHeight - s.ball.r);
+      }
     }
 
-    setupCanvas();
-    const onResize = () => setupCanvas();
+    measureAndSetup();
+    const onResize = () => measureAndSetup();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  /** Track light/dark mode so the playfield matches the rest of the site */
+  /** Match light/dark */
   useEffect(() => {
     const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
     const apply = () => (stateRef.current.dark = !!mql?.matches);
@@ -109,7 +114,7 @@ export default function PongPage() {
     return () => mql?.removeEventListener?.("change", apply);
   }, []);
 
-  /** Keyboard controls */
+  /** Keyboard */
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       if (e.code === "ArrowUp") stateRef.current.keys.up = true;
@@ -133,7 +138,7 @@ export default function PongPage() {
     };
   }, []);
 
-  /** Touch controls: top half = up, bottom half = down */
+  /** Touch */
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -164,9 +169,7 @@ export default function PongPage() {
 
   /** Pause when tab hidden */
   useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) setPaused(true);
-    };
+    const onVis = () => { if (document.hidden) setPaused(true); };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
@@ -174,12 +177,12 @@ export default function PongPage() {
   function resetRound(scoredLeft?: boolean) {
     const s = stateRef.current;
     s.ball.pos = { x: s.width / 2, y: s.height / 2 };
+
     const base = 6 + Math.random() * 2;
     const dirX = scoredLeft ? -1 : 1;
     const vx = dirX * base * (Math.random() > 0.5 ? 1 : -1);
     const vy = (Math.random() * 4 + 2) * (Math.random() > 0.5 ? 1 : -1);
 
-    // Normalize to avoid very slow diagonals; keep total speed near 8–10
     const sp = clamp(Math.hypot(vx, vy), 8, 10);
     const nx = vx / Math.hypot(vx, vy);
     const ny = vy / Math.hypot(vx, vy);
@@ -189,14 +192,13 @@ export default function PongPage() {
     s.padR.y = s.height / 2 - s.paddleH / 2;
   }
 
-  // Main loop
   useEffect(() => {
     function step() {
       const ctx = ctxRef.current;
       if (!ctx) return;
       const s = stateRef.current;
 
-      // Clear bg
+      // BG
       ctx.fillStyle = s.dark ? BG_DARK : BG_LIGHT;
       ctx.fillRect(0, 0, s.width, s.height);
 
@@ -209,7 +211,7 @@ export default function PongPage() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Update paddles (left human, right AI)
+      // Update paddles/ball
       const moveUp = s.keys.up || s.keys.w;
       const moveDown = s.keys.down || s.keys.s;
 
@@ -218,23 +220,21 @@ export default function PongPage() {
         if (moveDown) s.padL.y += s.padSpeed;
         s.padL.y = clamp(s.padL.y, 0, s.height - s.paddleH);
 
-        // AI tracks ball with easing; speed up a touch as game goes on
         const aiEase = 0.08 + Math.min(0.06, (Math.abs(s.ball.vel.x) - 6) * 0.01);
         const target = s.ball.pos.y - s.paddleH / 2;
         s.padR.y += (target - s.padR.y) * aiEase;
         s.padR.y = clamp(s.padR.y, 0, s.height - s.paddleH);
 
-        // Move ball
         s.ball.pos.x += s.ball.vel.x;
         s.ball.pos.y += s.ball.vel.y;
 
-        // Bounce top/bottom
+        // Bounce walls
         if (s.ball.pos.y - s.ball.r < 0 || s.ball.pos.y + s.ball.r > s.height) {
           s.ball.vel.y *= -1;
           s.ball.pos.y = clamp(s.ball.pos.y, s.ball.r, s.height - s.ball.r);
         }
 
-        // Paddle collisions (+ speed up on each hit)
+        // Paddle hits (speed up)
         // Left
         if (
           s.ball.pos.x - s.ball.r < s.padL.x + s.paddleW &&
@@ -272,12 +272,11 @@ export default function PongPage() {
         }
       }
 
-      // Draw paddles
+      // Draw paddles & ball
       ctx.fillStyle = s.dark ? "#e5e7eb" : "#111827";
       ctx.fillRect(s.padL.x, s.padL.y, s.paddleW, s.paddleH);
       ctx.fillRect(s.padR.x, s.padR.y, s.paddleW, s.paddleH);
 
-      // Draw ball
       ctx.beginPath();
       ctx.arc(s.ball.pos.x, s.ball.pos.y, s.ball.r, 0, Math.PI * 2);
       ctx.fill();
@@ -288,24 +287,23 @@ export default function PongPage() {
       ctx.fillText(`${scoreL}`, s.width / 2 - 40, 40);
       ctx.fillText(`${scoreR}`, s.width / 2 + 40, 40);
 
+      // Yellow frame INSIDE canvas so all 4 edges are obvious
+      ctx.strokeStyle = BORDER_COLOR;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(2, 2, s.width - 4, s.height - 4);
+
       // Help text
       if (paused) {
         ctx.font = "16px ui-sans-serif, system-ui, -apple-system, Segoe UI";
         ctx.textAlign = "center";
-        ctx.fillText(
-          "Press Space to start/pause — R to reset — W/S or ↑/↓ to move",
-          s.width / 2,
-          s.height - 18
-        );
+        ctx.fillText("Press Space to start/pause — R to reset — W/S or ↑/↓ to move", s.width / 2, s.height - 18);
       }
 
       rafRef.current = requestAnimationFrame(step);
     }
 
     rafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [paused, scoreL, scoreR]);
 
   function resetMatch() {
@@ -339,13 +337,14 @@ export default function PongPage() {
         </div>
       </header>
 
-      {/* Playfield with yellow border */}
-      <div className="relative flex-1 border-4" style={{ borderColor: BORDER_COLOR }}>
+      {/* Playfield: fills all remaining space, no scrollbars */}
+      <div ref={wrapRef} className="relative flex-1 overflow-hidden">
+        {/* Canvas covers wrapper; ring overlay would also work, but we now draw the border IN the canvas */}
         <canvas ref={canvasRef} className="absolute inset-0 block touch-none" />
       </div>
 
-      {/* Footer help text (acts as spacer for layout calc) */}
-      <div className="h-[56px] flex items-center justify-center text-xs text-neutral-500">
+      {/* Help bar (height used implicitly in layout calc above) */}
+      <div className="h-14 flex items-center justify-center text-xs text-neutral-500">
         ↑/↓ or W/S to move • Space to pause • R to reset
       </div>
     </div>
