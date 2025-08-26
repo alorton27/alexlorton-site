@@ -1,4 +1,3 @@
-// =============================
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -11,7 +10,7 @@ const COLORS = [
   "#FFD60A", // yellow
   "#8E24AA", // purple
   "#FF7F50", // coral
-  "#FFFFFF", // white (acts like eraser on colored strokes)
+  "#FFFFFF", // white (eraser)
 ];
 
 export default function WhiteboardPage() {
@@ -23,23 +22,25 @@ export default function WhiteboardPage() {
   const [color, setColor] = useState<string>("#111827");
   const [lineWidth, setLineWidth] = useState<number>(4);
 
-  // Keep track of the CSS size we render at (not device pixels)
   const cssSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
-  // Set up / resize canvas to fill the viewport minus the site nav + bottom controls
+  /** Set up and preserve drawings on resize */
   useEffect(() => {
     function setup() {
       const c = canvasRef.current;
       if (!c) return;
 
-      const headerReserve = 64;  // approx height for your site nav
-      const controlsReserve = 116; // fixed controls height below
       const cssWidth = window.innerWidth;
-      const cssHeight = Math.max(240, window.innerHeight - headerReserve - controlsReserve);
+      const cssHeight = window.innerHeight - 64 - 100; // subtract header + controls estimate
+
+      // store previous drawing if any
+      let prev: ImageData | null = null;
+      if (ctxRef.current) {
+        prev = ctxRef.current.getImageData(0, 0, c.width, c.height);
+      }
 
       cssSizeRef.current = { width: cssWidth, height: cssHeight };
 
-      // HiDPI crispness
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       c.width = Math.floor(cssWidth * dpr);
       c.height = Math.floor(cssHeight * dpr);
@@ -48,15 +49,21 @@ export default function WhiteboardPage() {
 
       const ctx = c.getContext("2d");
       if (!ctx) return;
-
-      // Reset transform, then scale to DPR
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
-
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
       ctx.strokeStyle = color;
       ctx.lineWidth = lineWidth;
+
+      // restore previous drawing
+      if (prev) {
+        const tmp = document.createElement("canvas");
+        tmp.width = prev.width;
+        tmp.height = prev.height;
+        tmp.getContext("2d")?.putImageData(prev, 0, 0);
+        ctx.drawImage(tmp, 0, 0, c.width / dpr, c.height / dpr);
+      }
 
       ctxRef.current = ctx;
     }
@@ -121,17 +128,12 @@ export default function WhiteboardPage() {
     const c = canvasRef.current;
     if (!c) return;
 
-    // Create an export canvas that matches the *CSS* size (what users see)
     const { width: cssW, height: cssH } = cssSizeRef.current;
     const exportCanvas = document.createElement("canvas");
     exportCanvas.width = cssW;
     exportCanvas.height = cssH;
-
     const exportCtx = exportCanvas.getContext("2d");
     if (!exportCtx) return;
-
-    // Draw the on-screen canvas onto the export canvas scaled to CSS size
-    // Current canvas is DPR-scaled; drawImage handles the downscale
     exportCtx.drawImage(c, 0, 0, cssW, cssH);
 
     const link = document.createElement("a");
@@ -142,13 +144,12 @@ export default function WhiteboardPage() {
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] flex flex-col bg-white dark:bg-neutral-950">
-      {/* Keep global site nav above this page content */}
       <header className="p-4 text-center text-xl font-semibold border-b bg-white/80 dark:bg-neutral-900/70 sticky top-0 z-10">
         All ideas welcome
       </header>
 
-      {/* Drawing surface with bright yellow border */}
-      <div className="relative flex-1 border-4 border-[#FFD60A]">
+      {/* Drawing surface */}
+      <div className="relative flex-1 border-4 border-[#FFD60A] overflow-hidden">
         <canvas
           ref={canvasRef}
           className="absolute inset-0 touch-none cursor-crosshair bg-white dark:bg-neutral-950"
@@ -160,14 +161,12 @@ export default function WhiteboardPage() {
         />
       </div>
 
-      {/* Bottom controls (fixed so they always show) */}
+      {/* Controls fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 z-20 flex flex-col items-center gap-3 pb-4">
-        {/* Palette + size */}
         <div className="flex flex-wrap items-center justify-center gap-2 rounded-full bg-white/95 dark:bg-neutral-800/95 px-3 py-2 shadow border">
           {COLORS.map((c) => (
             <button
               key={c}
-              title={c}
               onClick={() => setColor(c)}
               className={`h-7 w-7 rounded-full border ${
                 c.toLowerCase() === color.toLowerCase()
@@ -191,7 +190,6 @@ export default function WhiteboardPage() {
           </label>
         </div>
 
-        {/* Clear / Download */}
         <div className="flex items-center gap-2 rounded-full bg-white/95 dark:bg-neutral-800/95 px-3 py-2 shadow border">
           <button
             onClick={clearCanvas}

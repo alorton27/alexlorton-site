@@ -1,16 +1,7 @@
-// =============================
+// app/fun/game/page.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-/**
- * Full-page Pong
- * - ArrowUp/ArrowDown OR W/S to move left paddle
- * - Right paddle is simple AI
- * - Space to pause/resume, R to reset
- * - Touch controls on mobile (left/right halves)
- * - Yellow border around the playfield
- */
 
 type Vec = { x: number; y: number };
 
@@ -23,40 +14,53 @@ export default function PongPage() {
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Game state
+  // UI state
   const [paused, setPaused] = useState<boolean>(true);
   const [scoreL, setScoreL] = useState(0);
   const [scoreR, setScoreR] = useState(0);
 
-  // Internal mutable state
+  // Game state (mutable)
   const stateRef = useRef({
     width: 0,
-    height: 0,
-    // virtual canvas size in CSS pixels (we scale for DPR)
+    height: 0,           // logical (CSS) canvas size
+    dpr: 1,
+
     paddleH: 90,
     paddleW: 10,
     padL: { x: 24, y: 0 },
     padR: { x: 0, y: 0 },
     padSpeed: 8,
+
     ball: { pos: { x: 0, y: 0 }, vel: { x: 6, y: 4 }, r: 7 },
+    maxBallSpeed: 20,     // cap the speed
+    speedBoost: 1.05,     // multiplier per paddle hit
+
     keys: { up: false, down: false, w: false, s: false },
+
     dark: false,
   });
 
-  // Fit canvas to available viewport (below the header, above our footer controls)
+  /** Setup + resize (preserve state by scaling positions instead of resetting) */
   useEffect(() => {
     function setupCanvas() {
       const c = canvasRef.current;
       if (!c) return;
 
-      // reserve a little space for header text + footer controls in this page
-      const headerReserve = 64; // global site nav
-      const controlsReserve = 72;
+      // Reserve space for page header (this page) + footer help text
+      const pageHeaderReserve = 56; // ~ h-14
+      const footerReserve = 56;
 
       const cssWidth = window.innerWidth;
-      const cssHeight = Math.max(300, window.innerHeight - headerReserve - controlsReserve);
+      const cssHeight = Math.max(300, window.innerHeight - pageHeaderReserve - footerReserve);
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      // scale factor vs previous logical size
+      const prevW = stateRef.current.width || cssWidth;
+      const prevH = stateRef.current.height || cssHeight;
+      const scaleX = cssWidth / prevW;
+      const scaleY = cssHeight / prevH;
+
       c.width = Math.floor(cssWidth * dpr);
       c.height = Math.floor(cssHeight * dpr);
       c.style.width = `${cssWidth}px`;
@@ -66,23 +70,27 @@ export default function PongPage() {
       if (!ctx) return;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
-
       ctxRef.current = ctx;
 
-      // Store logical size in CSS pixels
-      stateRef.current.width = cssWidth;
-      stateRef.current.height = cssHeight;
-
-      // Layout paddles and ball
+      // Update logical size + dpr
       const s = stateRef.current;
+      s.width = cssWidth;
+      s.height = cssHeight;
+      s.dpr = dpr;
+
+      // Resize paddles/ball proportionally (preserve state)
       s.paddleH = Math.max(70, Math.floor(cssHeight * 0.18));
       s.paddleW = 10;
-      s.padL.x = 24;
-      s.padL.y = cssHeight / 2 - s.paddleH / 2;
+
+      s.padL.x = 24; // keep a fixed inset
+      s.padL.y = clamp(s.padL.y * scaleY, 0, cssHeight - s.paddleH);
+
       s.padR.x = cssWidth - s.paddleW - 24;
-      s.padR.y = cssHeight / 2 - s.paddleH / 2;
-      s.ball.pos = { x: cssWidth / 2, y: cssHeight / 2 };
-      s.ball.vel = { x: 6 * (Math.random() > 0.5 ? 1 : -1), y: (Math.random() * 4 + 2) * (Math.random() > 0.5 ? 1 : -1) };
+      s.padR.y = clamp(s.padR.y * scaleY, 0, cssHeight - s.paddleH);
+
+      // Ball position/size scales with canvas
+      s.ball.pos.x = clamp(s.ball.pos.x * scaleX, s.ball.r, cssWidth - s.ball.r);
+      s.ball.pos.y = clamp(s.ball.pos.y * scaleY, s.ball.r, cssHeight - s.ball.r);
       s.ball.r = Math.max(6, Math.floor(Math.min(cssWidth, cssHeight) * 0.012));
     }
 
@@ -92,7 +100,16 @@ export default function PongPage() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Keyboard
+  /** Track light/dark mode so the playfield matches the rest of the site */
+  useEffect(() => {
+    const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const apply = () => (stateRef.current.dark = !!mql?.matches);
+    apply();
+    mql?.addEventListener?.("change", apply);
+    return () => mql?.removeEventListener?.("change", apply);
+  }, []);
+
+  /** Keyboard controls */
   useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       if (e.code === "ArrowUp") stateRef.current.keys.up = true;
@@ -116,7 +133,36 @@ export default function PongPage() {
     };
   }, []);
 
-  // Pause when tab hidden
+  /** Touch controls: top half = up, bottom half = down */
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+
+    const onTouch = (e: TouchEvent) => {
+      const rect = c.getBoundingClientRect();
+      const y = e.touches[0]?.clientY ?? rect.top;
+      const topHalf = y - rect.top < rect.height / 2;
+      stateRef.current.keys.up = topHalf;
+      stateRef.current.keys.down = !topHalf;
+    };
+    const stop = () => {
+      stateRef.current.keys.up = false;
+      stateRef.current.keys.down = false;
+    };
+
+    c.addEventListener("touchstart", onTouch);
+    c.addEventListener("touchmove", onTouch);
+    c.addEventListener("touchend", stop);
+    c.addEventListener("touchcancel", stop);
+    return () => {
+      c.removeEventListener("touchstart", onTouch);
+      c.removeEventListener("touchmove", onTouch);
+      c.removeEventListener("touchend", stop);
+      c.removeEventListener("touchcancel", stop);
+    };
+  }, []);
+
+  /** Pause when tab hidden */
   useEffect(() => {
     const onVis = () => {
       if (document.hidden) setPaused(true);
@@ -125,46 +171,20 @@ export default function PongPage() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // Touch controls: left half = up, right half = down (simple)
-  useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (!c) return;
-      const rect = c.getBoundingClientRect();
-      for (const t of Array.from(e.touches)) {
-        const y = t.clientY - rect.top;
-        const topHalf = y < rect.height / 2;
-        // on mobile: top = up, bottom = down
-        stateRef.current.keys.up = topHalf;
-        stateRef.current.keys.down = !topHalf;
-      }
-    };
-    const onTouchEnd = () => {
-      stateRef.current.keys.up = false;
-      stateRef.current.keys.down = false;
-    };
-
-    c.addEventListener("touchstart", onTouchStart);
-    c.addEventListener("touchmove", onTouchStart);
-    c.addEventListener("touchend", onTouchEnd);
-    c.addEventListener("touchcancel", onTouchEnd);
-    return () => {
-      c.removeEventListener("touchstart", onTouchStart);
-      c.removeEventListener("touchmove", onTouchStart);
-      c.removeEventListener("touchend", onTouchEnd);
-      c.removeEventListener("touchcancel", onTouchEnd);
-    };
-  }, []);
-
   function resetRound(scoredLeft?: boolean) {
     const s = stateRef.current;
     s.ball.pos = { x: s.width / 2, y: s.height / 2 };
-    s.ball.vel = {
-      x: (scoredLeft ? -1 : 1) * (6 + Math.random() * 2) * (Math.random() > 0.5 ? 1 : -1),
-      y: (Math.random() * 4 + 2) * (Math.random() > 0.5 ? 1 : -1),
-    };
+    const base = 6 + Math.random() * 2;
+    const dirX = scoredLeft ? -1 : 1;
+    const vx = dirX * base * (Math.random() > 0.5 ? 1 : -1);
+    const vy = (Math.random() * 4 + 2) * (Math.random() > 0.5 ? 1 : -1);
+
+    // Normalize to avoid very slow diagonals; keep total speed near 8–10
+    const sp = clamp(Math.hypot(vx, vy), 8, 10);
+    const nx = vx / Math.hypot(vx, vy);
+    const ny = vy / Math.hypot(vx, vy);
+    s.ball.vel = { x: nx * sp, y: ny * sp };
+
     s.padL.y = s.height / 2 - s.paddleH / 2;
     s.padR.y = s.height / 2 - s.paddleH / 2;
   }
@@ -174,16 +194,14 @@ export default function PongPage() {
     function step() {
       const ctx = ctxRef.current;
       if (!ctx) return;
-
       const s = stateRef.current;
 
-      // Clear
+      // Clear bg
       ctx.fillStyle = s.dark ? BG_DARK : BG_LIGHT;
       ctx.fillRect(0, 0, s.width, s.height);
 
       // Midline
-      ctx.strokeStyle = "rgba(0,0,0,0.08)";
-      if (s.dark) ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      ctx.strokeStyle = s.dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)";
       ctx.setLineDash([6, 10]);
       ctx.beginPath();
       ctx.moveTo(s.width / 2, 0);
@@ -191,30 +209,32 @@ export default function PongPage() {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Update paddles (left: human, right: simple AI)
+      // Update paddles (left human, right AI)
       const moveUp = s.keys.up || s.keys.w;
       const moveDown = s.keys.down || s.keys.s;
+
       if (!paused) {
         if (moveUp) s.padL.y -= s.padSpeed;
         if (moveDown) s.padL.y += s.padSpeed;
         s.padL.y = clamp(s.padL.y, 0, s.height - s.paddleH);
 
-        // AI tries to track ball with slight easing
+        // AI tracks ball with easing; speed up a touch as game goes on
+        const aiEase = 0.08 + Math.min(0.06, (Math.abs(s.ball.vel.x) - 6) * 0.01);
         const target = s.ball.pos.y - s.paddleH / 2;
-        s.padR.y += (target - s.padR.y) * 0.08;
+        s.padR.y += (target - s.padR.y) * aiEase;
         s.padR.y = clamp(s.padR.y, 0, s.height - s.paddleH);
 
         // Move ball
         s.ball.pos.x += s.ball.vel.x;
         s.ball.pos.y += s.ball.vel.y;
 
-        // Collide top/bottom
+        // Bounce top/bottom
         if (s.ball.pos.y - s.ball.r < 0 || s.ball.pos.y + s.ball.r > s.height) {
           s.ball.vel.y *= -1;
           s.ball.pos.y = clamp(s.ball.pos.y, s.ball.r, s.height - s.ball.r);
         }
 
-        // Collide paddles
+        // Paddle collisions (+ speed up on each hit)
         // Left
         if (
           s.ball.pos.x - s.ball.r < s.padL.x + s.paddleW &&
@@ -223,9 +243,9 @@ export default function PongPage() {
           s.ball.vel.x < 0
         ) {
           s.ball.vel.x *= -1;
-          // add some "english" based on where it hits the paddle
           const hit = (s.ball.pos.y - (s.padL.y + s.paddleH / 2)) / (s.paddleH / 2);
           s.ball.vel.y += hit * 3;
+          speedUpBall(s);
         }
         // Right
         if (
@@ -237,6 +257,7 @@ export default function PongPage() {
           s.ball.vel.x *= -1;
           const hit = (s.ball.pos.y - (s.padR.y + s.paddleH / 2)) / (s.paddleH / 2);
           s.ball.vel.y += hit * 3;
+          speedUpBall(s);
         }
 
         // Score
@@ -261,17 +282,21 @@ export default function PongPage() {
       ctx.arc(s.ball.pos.x, s.ball.pos.y, s.ball.r, 0, Math.PI * 2);
       ctx.fill();
 
-      // Draw score
+      // Score
       ctx.font = "bold 28px ui-sans-serif, system-ui, -apple-system, Segoe UI";
       ctx.textAlign = "center";
       ctx.fillText(`${scoreL}`, s.width / 2 - 40, 40);
       ctx.fillText(`${scoreR}`, s.width / 2 + 40, 40);
 
-      // Help text when paused
+      // Help text
       if (paused) {
         ctx.font = "16px ui-sans-serif, system-ui, -apple-system, Segoe UI";
         ctx.textAlign = "center";
-        ctx.fillText("Press Space to start / pause — R to reset — W/S or ↑/↓ to move", s.width / 2, s.height - 18);
+        ctx.fillText(
+          "Press Space to start/pause — R to reset — W/S or ↑/↓ to move",
+          s.width / 2,
+          s.height - 18
+        );
       }
 
       rafRef.current = requestAnimationFrame(step);
@@ -292,7 +317,7 @@ export default function PongPage() {
 
   return (
     <div className="w-full min-h-[calc(100vh-64px)] flex flex-col bg-white dark:bg-neutral-950">
-      {/* Keep your global nav above; page header below */}
+      {/* Page header */}
       <header className="px-4 sm:px-6 py-3 border-b bg-white/80 dark:bg-neutral-900/70">
         <div className="mx-auto max-w-6xl flex items-center justify-between">
           <h1 className="text-xl font-semibold">Pong</h1>
@@ -319,15 +344,29 @@ export default function PongPage() {
         <canvas ref={canvasRef} className="absolute inset-0 block touch-none" />
       </div>
 
-      {/* Footer spacer (keeps controls visible if you add more later) */}
-      <div className="h-[72px] flex items-center justify-center text-xs text-neutral-500">
+      {/* Footer help text (acts as spacer for layout calc) */}
+      <div className="h-[56px] flex items-center justify-center text-xs text-neutral-500">
         ↑/↓ or W/S to move • Space to pause • R to reset
       </div>
     </div>
   );
 }
 
-// Helpers
+/** Helpers */
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
+}
+
+function speedUpBall(s: {
+  ball: { pos: Vec; vel: Vec; r: number };
+  speedBoost: number;
+  maxBallSpeed: number;
+}) {
+  const { vel } = s.ball;
+  const speed = Math.hypot(vel.x, vel.y);
+  const next = Math.min(s.maxBallSpeed, speed * s.speedBoost);
+  const nx = vel.x / speed;
+  const ny = vel.y / speed;
+  s.ball.vel.x = nx * next;
+  s.ball.vel.y = ny * next;
 }
