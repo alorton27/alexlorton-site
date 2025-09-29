@@ -109,7 +109,7 @@ export default function Contact() {
       </form>
 
       <div className="text-sm text-neutral-500">
-        New York, NY • <a className="underline" href="mailto:alorton@gmail.com">alorton@gmail.com</a>
+        New York, NY
       </div>
     </main>
   );

@@ -131,6 +131,7 @@ export default function Header() {
         <nav className="hidden md:flex items-center gap-6">
           <NavLink href="/about">About</NavLink>
           <NavLink href="/contact">Contact</NavLink>
+          <NavLink href="/blog">Blog</NavLink>
           <FunMenu />
           <NavLink href="/login">Sign In</NavLink>
         </nav>
@@ -152,6 +153,7 @@ export default function Header() {
           <div className="mx-auto max-w-5xl px-4 py-3 grid gap-2">
             <NavLink href="/about">About</NavLink>
             <NavLink href="/contact">Contact</NavLink>
+            <NavLink href="/blog">Blog</NavLink>
 
             {/* Mobile Fun group */}
             <details className="[&_summary]:list-none">
