@@ -1,16 +1,28 @@
-import Image from "next/image";
+import styles from "./blog.module.css";
 import sanitizeHtml from "sanitize-html";
 import { XMLParser } from "fast-xml-parser";
 
-// ---- types
 type Post = {
   title: string;
   link: string;
   pubDate: string;
-  image?: string | null;
-  html: string;         // sanitized full HTML body
-  plain?: string;       // optional text-only
+  bodyHtml: string; // sanitized, full HTML
 };
+
+// Safely convert XML node (string | {__cdata|#text|...}) to string
+function textify(v: any): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    // common shapes from fast-xml-parser
+    if (typeof v.__cdata === "string") return v.__cdata;
+    if (typeof v["#text"] === "string") return v["#text"];
+    // last resort: first string value
+    const firstStr = Object.values(v).find((x) => typeof x === "string");
+    if (firstStr) return String(firstStr);
+  }
+  return String(v);
+}
 
 async function fetchPosts(): Promise<Post[]> {
   const controller = new AbortController();
@@ -18,7 +30,6 @@ async function fetchPosts(): Promise<Post[]> {
 
   try {
     const res = await fetch("https://alexlorton.substack.com/feed", {
-      // If you want caching, swap to: next: { revalidate: 600 }
       cache: "no-store",
       signal: controller.signal,
       headers: { Accept: "application/rss+xml, text/xml" },
@@ -31,45 +42,45 @@ async function fetchPosts(): Promise<Post[]> {
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
       cdataPropName: "__cdata",
-      processEntities: true, // decodes common entities in text nodes
+      processEntities: true,
     });
     const parsed = parser.parse(xml);
-
     const items = parsed?.rss?.channel?.item ?? [];
+
     return items.map((it: any): Post => {
-      // Title/date
-      const title = String(it.title ?? "");
-      const pubDate = it.pubDate ?? "";
-      const link = it.link ?? "";
+      const title = textify(it?.title);
+      const link = textify(it?.link);
+      const pubDate = textify(it?.pubDate);
 
-      // Prefer <content:encoded> (full body). Some feeds put it under "content:encoded".
-      const rawHtml =
-        it["content:encoded"]?.__cdata ??
-        it["content:encoded"] ??
-        it.description ??
+      const raw =
+        it?.["content:encoded"]?.__cdata ??
+        it?.["content:encoded"] ??
+        it?.description ??
         "";
+      const rawHtml = typeof raw === "string" ? raw : textify(raw);
 
-      // Try to find a lead image: <media:content>, <enclosure>, or first <img> in content.
-      let image: string | null = null;
-      const enclosure = it.enclosure?.["@_url"];
-      const media = it["media:content"]?.["@_url"];
-      image = enclosure || media || null;
-
-      // Fallback: sniff the first <img src="..."> in the HTML
-      if (!image && typeof rawHtml === "string") {
-        const m = rawHtml.match(/<img[^>]+src=["']([^"']+)["']/i);
-        if (m) image = m[1];
-      }
-
-      // Sanitize the full HTML so we can render in-page safely.
-      const html = sanitizeHtml(String(rawHtml), {
-        allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img", "figure", "figcaption"]),
+      const bodyHtml = sanitizeHtml(rawHtml, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+          "img",
+          "figure",
+          "figcaption",
+          "iframe",
+        ]),
         allowedAttributes: {
           ...sanitizeHtml.defaults.allowedAttributes,
-          img: ["src", "alt", "title", "width", "height", "srcset", "sizes", "loading"],
+          img: [
+            "src",
+            "alt",
+            "title",
+            "width",
+            "height",
+            "srcset",
+            "sizes",
+            "loading",
+          ],
           a: ["href", "name", "target", "rel"],
+          iframe: ["src", "width", "height", "allow", "allowfullscreen"],
         },
-        // Add rel attrs to external links
         transformTags: {
           a: (tagName, attribs) => ({
             tagName: "a",
@@ -82,7 +93,7 @@ async function fetchPosts(): Promise<Post[]> {
         },
       });
 
-      return { title, link, pubDate, image, html };
+      return { title, link, pubDate, bodyHtml };
     });
   } catch {
     return [];
@@ -93,50 +104,47 @@ export default async function BlogPage() {
   const posts = await fetchPosts();
 
   return (
-    <main className="prose mx-auto px-4 py-10">
-      <h1>Re:Start</h1>
-      <p className="text-sm text-gray-500">Published on Substack, shown here.</p>
+    <main className={styles.wrap}>
+      <h1 className={styles.title}>Re:Start</h1>
+      <p className={styles.subtitle}>Published on Substack, shown here.</p>
 
-      {posts.length === 0 && (
-        <p>
-          Couldn’t load posts right now.{" "}
-          <a href="https://alexlorton.substack.com" target="_blank" rel="noreferrer">
-            Read on Substack ↗
-          </a>
-        </p>
-      )}
+      {posts.map((p) => {
+        const dateStr = p.pubDate
+          ? new Date(p.pubDate).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "";
 
-      {posts.map((p) => (
-        <article key={p.link} className="not-prose border-b pb-10 mb-10">
-          <header className="prose">
-            <h2 className="mb-1">{p.title}</h2>
-            <p className="text-sm text-gray-500">{new Date(p.pubDate).toLocaleDateString()}</p>
-          </header>
+        return (
+          <article key={p.link} className={styles.post}>
+            <header className={styles.header}>
+              <h2 className={styles.postTitle}>{p.title}</h2>
+              {dateStr && (
+                <time
+                  className={styles.date}
+                  dateTime={new Date(p.pubDate).toISOString()}
+                >
+                  {dateStr}
+                </time>
+              )}
+            </header>
 
-          {p.image && (
-            <div className="my-4">
-              <Image
-                src={p.image}
-                alt={p.title}
-                width={1200}
-                height={630}
-                sizes="(max-width: 768px) 100vw, 1200px"
-                style={{ width: "100%", height: "auto" }}
-              />
-            </div>
-          )}
+            {/* Render full Substack HTML (includes the hero image already) */}
+            <div
+              className={styles.body}
+              dangerouslySetInnerHTML={{ __html: p.bodyHtml }}
+            />
 
-          {/* FULL BODY from Substack feed (sanitized) */}
-          <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: p.html }} />
-
-          {/* Optional: a small link back to the canonical */}
-          <p className="prose mt-4">
-            <a href={p.link} target="_blank" rel="noreferrer">
-              View on Substack ↗
-            </a>
-          </p>
-        </article>
-      ))}
+            <p className={styles.canonical}>
+              <a href={p.link} target="_blank" rel="noreferrer">
+                View on Substack ↗
+              </a>
+            </p>
+          </article>
+        );
+      })}
     </main>
   );
 }
