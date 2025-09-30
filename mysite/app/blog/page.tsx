@@ -1,5 +1,4 @@
 import Image from "next/image";
-import he from "he";
 import sanitizeHtml from "sanitize-html";
 import { XMLParser } from "fast-xml-parser";
 
@@ -39,7 +38,7 @@ async function fetchPosts(): Promise<Post[]> {
     const items = parsed?.rss?.channel?.item ?? [];
     return items.map((it: any): Post => {
       // Title/date
-      const title = he.decode(it.title ?? "");
+      const title = String(it.title ?? "");
       const pubDate = it.pubDate ?? "";
       const link = it.link ?? "";
 
