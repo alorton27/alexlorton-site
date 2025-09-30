@@ -1,5 +1,4 @@
 import Image from "next/image";
-import DOMPurify from "isomorphic-dompurify"; // not needed server-side; we'll use sanitize-html instead
 import he from "he";
 import sanitizeHtml from "sanitize-html";
 import { XMLParser } from "fast-xml-parser";
