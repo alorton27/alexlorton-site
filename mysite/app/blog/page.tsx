@@ -1,53 +1,144 @@
-import Link from "next/link";
 import Image from "next/image";
-import { fetchSubstackFeed } from "@/lib/substack";
+import DOMPurify from "isomorphic-dompurify"; // not needed server-side; we'll use sanitize-html instead
+import he from "he";
+import sanitizeHtml from "sanitize-html";
+import { XMLParser } from "fast-xml-parser";
 
-export const revalidate = 600; // ISR: refresh every 10 minutes in prod
+// ---- types
+type Post = {
+  title: string;
+  link: string;
+  pubDate: string;
+  image?: string | null;
+  html: string;         // sanitized full HTML body
+  plain?: string;       // optional text-only
+};
 
-export default async function BlogIndex() {
-  const posts = await fetchSubstackFeed();
+async function fetchPosts(): Promise<Post[]> {
+  const controller = new AbortController();
+  const to = setTimeout(() => controller.abort(), 4000);
+
+  try {
+    const res = await fetch("https://alexlorton.substack.com/feed", {
+      // If you want caching, swap to: next: { revalidate: 600 }
+      cache: "no-store",
+      signal: controller.signal,
+      headers: { Accept: "application/rss+xml, text/xml" },
+    });
+    clearTimeout(to);
+    if (!res.ok) return [];
+
+    const xml = await res.text();
+    const parser = new XMLParser({
+      ignoreAttributes: false,
+      attributeNamePrefix: "@_",
+      cdataPropName: "__cdata",
+      processEntities: true, // decodes common entities in text nodes
+    });
+    const parsed = parser.parse(xml);
+
+    const items = parsed?.rss?.channel?.item ?? [];
+    return items.map((it: any): Post => {
+      // Title/date
+      const title = he.decode(it.title ?? "");
+      const pubDate = it.pubDate ?? "";
+      const link = it.link ?? "";
+
+      // Prefer <content:encoded> (full body). Some feeds put it under "content:encoded".
+      const rawHtml =
+        it["content:encoded"]?.__cdata ??
+        it["content:encoded"] ??
+        it.description ??
+        "";
+
+      // Try to find a lead image: <media:content>, <enclosure>, or first <img> in content.
+      let image: string | null = null;
+      const enclosure = it.enclosure?.["@_url"];
+      const media = it["media:content"]?.["@_url"];
+      image = enclosure || media || null;
+
+      // Fallback: sniff the first <img src="..."> in the HTML
+      if (!image && typeof rawHtml === "string") {
+        const m = rawHtml.match(/<img[^>]+src=["']([^"']+)["']/i);
+        if (m) image = m[1];
+      }
+
+      // Sanitize the full HTML so we can render in-page safely.
+      const html = sanitizeHtml(String(rawHtml), {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat(["img", "figure", "figcaption"]),
+        allowedAttributes: {
+          ...sanitizeHtml.defaults.allowedAttributes,
+          img: ["src", "alt", "title", "width", "height", "srcset", "sizes", "loading"],
+          a: ["href", "name", "target", "rel"],
+        },
+        // Add rel attrs to external links
+        transformTags: {
+          a: (tagName, attribs) => ({
+            tagName: "a",
+            attribs: {
+              ...attribs,
+              rel: attribs.rel ?? "noopener noreferrer",
+              target: attribs.target ?? "_blank",
+            },
+          }),
+        },
+      });
+
+      return { title, link, pubDate, image, html };
+    });
+  } catch {
+    return [];
+  }
+}
+
+export default async function BlogPage() {
+  const posts = await fetchPosts();
 
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-10">
-      <h1 className="text-3xl font-semibold mb-2">Re:Start</h1>
-      <p className="opacity-70 mb-8">Published on Substack, shown here.</p>
+    <main className="prose mx-auto px-4 py-10">
+      <h1>Re:Start</h1>
+      <p className="text-sm text-gray-500">Published on Substack, shown here.</p>
 
       {posts.length === 0 && (
-        <div className="rounded-xl border border-white/10 bg-surface/80 p-6">
-          <p className="opacity-70">No posts yet.</p>
-        </div>
+        <p>
+          Couldn’t load posts right now.{" "}
+          <a href="https://alexlorton.substack.com" target="_blank" rel="noreferrer">
+            Read on Substack ↗
+          </a>
+        </p>
       )}
 
-      <ul className="grid gap-6">
-        {posts.map((p) => (
-          <li key={p.id}>
-            <Link
-              href={p.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group flex gap-4 rounded-xl border border-white/10 bg-surface/80 p-5 transition hover:shadow-brand"
-            >
-              {p.cover && (
-                <Image
-                  src={p.cover}
-                  alt=""
-                  width={160}
-                  height={106}
-                  className="rounded-md object-cover aspect-[3/2]"
-                />
-              )}
-              <div className="min-w-0">
-                <h2 className="text-xl font-medium group-hover:underline">{p.title}</h2>
-                <p className="text-sm opacity-60">{new Date(p.date).toLocaleDateString()}</p>
-                {p.excerpt && <p className="mt-2 opacity-80 line-clamp-3">{p.excerpt}</p>}
-                <span className="mt-3 inline-block text-sm underline underline-offset-4 opacity-80">
-                  Read on Substack ↗
-                </span>
-              </div>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
+      {posts.map((p) => (
+        <article key={p.link} className="not-prose border-b pb-10 mb-10">
+          <header className="prose">
+            <h2 className="mb-1">{p.title}</h2>
+            <p className="text-sm text-gray-500">{new Date(p.pubDate).toLocaleDateString()}</p>
+          </header>
+
+          {p.image && (
+            <div className="my-4">
+              <Image
+                src={p.image}
+                alt={p.title}
+                width={1200}
+                height={630}
+                sizes="(max-width: 768px) 100vw, 1200px"
+                style={{ width: "100%", height: "auto" }}
+              />
+            </div>
+          )}
+
+          {/* FULL BODY from Substack feed (sanitized) */}
+          <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: p.html }} />
+
+          {/* Optional: a small link back to the canonical */}
+          <p className="prose mt-4">
+            <a href={p.link} target="_blank" rel="noreferrer">
+              View on Substack ↗
+            </a>
+          </p>
+        </article>
+      ))}
+    </main>
   );
 }
