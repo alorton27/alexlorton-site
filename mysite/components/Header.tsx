@@ -37,11 +37,7 @@ function FunMenu() {
   };
 
   return (
-    <div
-      className="relative"
-      onMouseEnter={openNow}
-      onMouseLeave={closeSoon}
-    >
+    <div className="relative" onMouseEnter={openNow} onMouseLeave={closeSoon}>
       <button
         type="button"
         className="px-3 py-2 rounded-lg text-sm font-semibold hover:bg-neutral-100 dark:hover:bg-neutral-800 inline-flex items-center gap-1"
@@ -68,6 +64,17 @@ function FunMenu() {
             >
               Relax
             </Link>
+
+            {/* NEW: Timer */}
+            <Link
+              href="/fun/timer"
+              role="menuitem"
+              className="block px-3 py-2 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              onClick={() => setOpen(false)}
+            >
+              Timer
+            </Link>
+
             <Link
               href="/fun/whiteboard"
               role="menuitem"
@@ -168,6 +175,16 @@ export default function Header() {
                 >
                   Relax
                 </Link>
+
+                {/* NEW: Timer */}
+                <Link
+                  href="/fun/timer"
+                  className="px-3 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  onClick={() => setOpen(false)}
+                >
+                  Timer
+                </Link>
+
                 <Link
                   href="/fun/whiteboard"
                   className="px-3 py-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800"
